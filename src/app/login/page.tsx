@@ -1,15 +1,120 @@
 import Link from "next/link"
 import { auth, signIn } from "@/lib/auth"
+import { db } from "@/lib/db"
+import { hashPassword } from "@/lib/password"
 import { redirect } from "next/navigation"
+import { AuthError } from "next-auth"
 
-export default async function LoginPage() {
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function getLoginUrl(error?: string, success?: string) {
+  const params = new URLSearchParams()
+  if (error) params.set("error", error)
+  if (success) params.set("success", success)
+  const query = params.toString()
+  return query ? `/login?${query}` : "/login"
+}
+
+async function registerWithEmail(formData: FormData) {
+  "use server"
+
+  const email = formData.get("email")?.toString().trim().toLowerCase() ?? ""
+  const password = formData.get("password")?.toString() ?? ""
+
+  if (!EMAIL_PATTERN.test(email)) {
+    redirect(getLoginUrl("请填写有效邮箱"))
+  }
+  if (password.length < 8) {
+    redirect(getLoginUrl("密码至少8位"))
+  }
+
+  const exists = await db.user.findUnique({ where: { email } })
+  if (exists) {
+    redirect(getLoginUrl("该邮箱已注册，请直接登录"))
+  }
+
+  await db.user.create({
+    data: {
+      email,
+      name: email.split("@")[0] || null,
+      passwordHash: await hashPassword(password),
+    },
+  })
+
+  await signIn("credentials", { email, password, redirectTo: "/" })
+}
+
+async function loginWithEmail(formData: FormData) {
+  "use server"
+
+  const email = formData.get("email")?.toString().trim().toLowerCase() ?? ""
+  const password = formData.get("password")?.toString() ?? ""
+  if (!email || !password) {
+    redirect(getLoginUrl("请输入邮箱和密码"))
+  }
+
+  try {
+    await signIn("credentials", { email, password, redirectTo: "/" })
+  } catch (error) {
+    if (error instanceof AuthError) {
+      redirect(getLoginUrl("邮箱或密码错误"))
+    }
+    throw error
+  }
+}
+
+type LoginPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
   const session = await auth()
   if (session) redirect("/")
+  const params = (await searchParams) ?? {}
+  const error = typeof params.error === "string" ? params.error : ""
+  const success = typeof params.success === "string" ? params.success : ""
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-amber-50 px-4">
       <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-lg">
         <h1 className="mb-8 text-center text-2xl font-bold text-amber-900">登录</h1>
+
+        {error ? <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+        {success ? <p className="mb-4 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{success}</p> : null}
+
+        <form className="space-y-3">
+          <input
+            name="email"
+            type="email"
+            required
+            placeholder="邮箱"
+            className="w-full rounded-xl border border-gray-300 px-4 py-2.5 outline-none ring-amber-500 transition focus:ring-2"
+          />
+          <input
+            name="password"
+            type="password"
+            required
+            minLength={8}
+            placeholder="密码（至少8位）"
+            className="w-full rounded-xl border border-gray-300 px-4 py-2.5 outline-none ring-amber-500 transition focus:ring-2"
+          />
+          <button
+            formAction={loginWithEmail}
+            type="submit"
+            className="w-full rounded-xl bg-amber-600 px-6 py-3 text-white transition-colors hover:bg-amber-700"
+          >
+            邮箱登录
+          </button>
+          <button
+            formAction={registerWithEmail}
+            type="submit"
+            className="w-full rounded-xl border border-amber-300 bg-white px-6 py-3 text-amber-700 transition-colors hover:bg-amber-50"
+          >
+            邮箱注册
+          </button>
+        </form>
+
+        <div className="my-6 text-center text-sm text-gray-400">或</div>
 
         <form
           action={async () => {
