@@ -36,7 +36,7 @@ async function registerWithEmail(formData: FormData) {
   await db.user.create({
     data: {
       email,
-      name: email.split("@")[0] || null,
+      name: email.split("@")[0],
       passwordHash: await hashPassword(password),
     },
   })
