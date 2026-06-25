@@ -1,0 +1,236 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  name          String?
+  email         String?  @unique
+  emailVerified DateTime?
+  image         String?
+  role          UserRole @default(USER)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  accounts       Account[]
+  sessions       Session[]
+  questionStates UserQuestionState[]
+  attempts       QuestionAttempt[]
+  favorites      FavoriteQuestion[]
+  wrongQuestions WrongQuestion[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+model Question {
+  id          String         @id @default(cuid())
+  type        QuestionType
+  stem        String
+  answer      Json
+  explanation String?
+  source      String?
+  grade       Int?
+  difficulty  Int            @default(1)
+  status      QuestionStatus @default(PUBLISHED)
+  version     Int            @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  options        QuestionOption[]
+  attempts       QuestionAttempt[]
+  states         UserQuestionState[]
+  tags           QuestionTag[]
+  practiceSets   PracticeSetQuestion[]
+  favorites      FavoriteQuestion[]
+  wrongQuestions WrongQuestion[]
+}
+
+enum QuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  BLANK
+  JUDGE
+  ORDERING
+  READING
+}
+
+enum QuestionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model QuestionOption {
+  id         String @id @default(cuid())
+  questionId String
+  label      String
+  content    String
+  sortOrder  Int
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  name      String
+  type      TagType
+  createdAt DateTime @default(now())
+
+  questions QuestionTag[]
+
+  @@unique([name, type])
+}
+
+enum TagType {
+  GRADE
+  DYNASTY
+  POET
+  THEME
+  SOURCE
+  KNOWLEDGE
+}
+
+model QuestionTag {
+  questionId String
+  tagId      String
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  tag      Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([questionId, tagId])
+}
+
+model PracticeSet {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  grade       Int?
+  type        String?
+  isPublic    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  questions PracticeSetQuestion[]
+}
+
+model PracticeSetQuestion {
+  practiceSetId String
+  questionId    String
+  sortOrder     Int
+
+  practiceSet PracticeSet @relation(fields: [practiceSetId], references: [id], onDelete: Cascade)
+  question    Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@id([practiceSetId, questionId])
+}
+
+model UserQuestionState {
+  id              String @id @default(cuid())
+  userId          String
+  questionId      String
+  questionVersion Int
+
+  answeredCount  Int      @default(0)
+  correctCount   Int      @default(0)
+  wrongCount     Int      @default(0)
+  lastAnswer     Json?
+  lastCorrect    Boolean?
+  lastAnsweredAt DateTime?
+  mastery        Float    @default(0)
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId])
+}
+
+model QuestionAttempt {
+  id              String  @id @default(cuid())
+  userId          String?
+  anonymousId     String?
+  localId         String?
+  questionId      String
+  questionVersion Int
+
+  answer     Json
+  isCorrect  Boolean
+  durationMs Int?
+  createdAt  DateTime @default(now())
+
+  user     User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, localId])
+  @@unique([anonymousId, localId])
+  @@index([userId, createdAt])
+  @@index([anonymousId, createdAt])
+}
+
+model FavoriteQuestion {
+  userId     String
+  questionId String
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@id([userId, questionId])
+}
+
+model WrongQuestion {
+  userId     String
+  questionId String
+  wrongCount Int      @default(1)
+  resolved   Boolean  @default(false)
+  updatedAt  DateTime @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@id([userId, questionId])
+}
